@@ -1,0 +1,10 @@
+# Ignore virtual environment folder
+venv/
+.env
+
+# Ignore secret keys file
+keys.json
+
+# Ignore Python cache and bytcode files
+__pycache__/
+*.pyc
