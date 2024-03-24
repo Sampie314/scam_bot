@@ -1,33 +1,67 @@
 import telebot
-import openai
+from openai import OpenAI
+import json
+import logging
 
-print('hi')
-# bot = telebot.TeleBot ('<Your telegram bot token>')
+logging.basicConfig(level=logging.DEBUG)
 
-# openai.api_key = '<Your openai API token>'
+# API keys
+with open('keys.json') as keys_file:
+    keys = json.load(keys_file)
+bot = telebot.TeleBot(keys['TELEGRAM_BOT_TOKEN'])
 
-# def generate_answer(text):
-#     try:
-#         response = openai.ChatCompletion.create(
-#             model="gpt-3.5-turbo",
-#             messages=[
-#                 {"role": "user", "content": text},
-#             ]
-#         )
+# System prompt
+with open('config.json') as config_file:
+    config = json.load(config_file)
+system_prompt = config['SYSTEM_CONTENT']
 
-#         result = ''
-#         for choice in response.choices:
-#             result += choice.message.content
+print(system_prompt)
 
-#     except Exception as e:
-#         return f"Oops!! Some problems with openAI. Reason: {e}"
+client = OpenAI(
+    # This is the default and can be omitted
+    api_key=keys['OPENAI_API_KEY'],
+)
 
-#     return result
+def generate_answer(text):
+    logging.debug('generate_answer function called')
+    logging.debug(f'Text received: {text}')
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": system_prompt
+                },
+                {
+                    "role": "user", 
+                    "content": text
+                },
+            ]
+        )
+        logging.debug(f"Response: {response}")
+
+        result = ''
+        for choice in response.choices:
+            result += choice.message.content
+
+        # For tracking token usage
+        result += f"\n Completion tokens: {response.usage.completion_tokens}"
+        result += f"\n Prompt tokens: {response.usage.prompt_tokens}"
+
+        logging.debug(f'Reply: {result}')
+
+    except Exception as e:
+        return f"Oops!! Some problems with openAI. Reason: {e}"
+
+    return result
 
 
-# @bot.message_handler(content_types=['text'])
-# def send_text(message):
-#     answer = generate_answer(message.text)
-#     bot.send_message(message.chat.id, answer)
+@bot.message_handler(content_types=['text'])
+def send_text(message):
+    logging.debug('send_text function called')
 
-# bot.polling()
+    answer = generate_answer(message.text)
+    bot.send_message(message.chat.id, answer)
+
+bot.polling()
