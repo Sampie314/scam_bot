@@ -117,19 +117,20 @@ def generate_newsletter(scam_stories, counter_measures):
 
     Write a concise newsletter message to summarize the latest scam stories and provide tips on how to protect oneself from these scams. You can also add emojis. Use the following format:
 
-    Scam Alert Newsletter
+    🚨 Scam Alert Newsletter 🚨
 
-    Latest Scam Stories
+    📰 Latest Scam Stories in Singapore:
     1. [Scam Story 1]
     2. [Scam Story 2]
     3. [Scam Story 3]
 
-    Tips to Protect Yourself from These Scams
+    💡 Tips to Protect Yourself from These Scams:
     1. [Tip 1]
     2. [Tip 2]
     3. [Tip 3]
 
-    Stay Informed and Stay Protected! #ScamAlert #ScamPrevention #StaySafe
+    Remember to stay vigilant and informed. Follow these tips to safeguard your personal information and finances. Together, we can combat scams effectively!
+    #ScamPreventionNewsletter
     """
     
     newsletter = chat.predict(newsletter_prompt)
