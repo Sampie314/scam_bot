@@ -44,3 +44,4 @@ typing_extensions==4.10.0
 urllib3==2.2.1
 yarl==1.9.4
 beautifulsoup4 == 4.12.3
+regex == 2023.12.25

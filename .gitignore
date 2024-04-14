@@ -12,3 +12,6 @@ __pycache__/
 
 # Ignore debugging
 .vscode/
+
+# Ignore testing files
+test.ipynb

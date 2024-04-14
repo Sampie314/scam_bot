@@ -104,7 +104,7 @@ def generate_counter_measures(scam_stories):
     print("Counter measures generated.")
     return counter_measures
 
-def generate_newsletter(scam_stories, counter_measures):
+def generate_newsletter(scam_stories, counter_measures, first_read_more_link):
     print("Generating newsletter...")
     newsletter_prompt = f"""
     Latest scam stories in Singapore:
@@ -115,24 +115,42 @@ def generate_newsletter(scam_stories, counter_measures):
 
     {counter_measures}
 
-    Write a concise newsletter message to summarize the latest scam stories and provide tips on how to protect oneself from these scams. You can also add emojis. Use the following format:
+    Write a SHORT AND CONCISED newsletter message to summarize the latest scam stories and provide tips on how to protect oneself from these scams.
+    For the tips refer to the Resource Guide: Understanding and Responding to Scams and tailor it to the specific scam stories.
+    Use the following format:
 
     🚨 Scam Alert Newsletter 🚨
 
     📰 Latest Scam Stories in Singapore:
-    1. [Scam Story 1]
-    2. [Scam Story 2]
-    3. [Scam Story 3]
+
+    1. [Scam Story 1] 
+
+    Read more at (insert link)
+
+    2. [Scam Story 2] 
+
+    Read more at (insert link)
+
+    3. [Scam Story 3] 
+
+    Read more at (insert link)
+    ...
 
     💡 Tips to Protect Yourself from These Scams:
-    1. [Tip 1]
-    2. [Tip 2]
-    3. [Tip 3]
 
-    Remember to stay vigilant and informed. Follow these tips to safeguard your personal information and finances. Together, we can combat scams effectively!
+    1. [Tip 1]
+
+    2. [Tip 2]
+
+    3. [Tip 3]
+    ...
+
+    Download the SPF's latest Weekly Scams Bulletin at {first_read_more_link} for more scam stories and prevention tips.
     #ScamPreventionNewsletter
+
+    make sure the newsletter is short, concise, and informative.
     """
-    
+    print(newsletter_prompt)
     newsletter = chat.predict(newsletter_prompt)
     print("Newsletter generated.")
     return newsletter
@@ -169,14 +187,14 @@ def scam_newsletter(message):
     try:
         # Scrape recent scams from https://www.scamalert.sg/stories
         print("Scraping recent scams...")
-        scam_stories = scrape_scam_stories()
+        scam_stories, first_read_more_link = scrape_scam_stories()
         print("Scam stories scraped.")
         
         # Prompt GPT for counter measures
         counter_measures = generate_counter_measures(scam_stories)
         
         # Generate newsletter message
-        newsletter = generate_newsletter(scam_stories, counter_measures)
+        newsletter = generate_newsletter(scam_stories, counter_measures, first_read_more_link)
         
         # Send newsletter message to user
         print("Sending newsletter to user.")
