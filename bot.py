@@ -2,6 +2,8 @@ import telebot
 import json
 import logging
 import json
+import time
+from cachetools import TTLCache
 from scamscraper import scrape_scam_stories
 from langchain_openai import ChatOpenAI
 # from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -15,6 +17,8 @@ from langchain.memory import ConversationBufferWindowMemory
 from langchain.agents.openai_tools.base import create_openai_tools_agent
 from langchain.agents.agent import AgentExecutor
 import agenttools
+
+cache = TTLCache(maxsize=1, ttl=6 * 60 * 60)  # maxsize=1 because we only need to cache one newsletter
 
 # Enable logging
 logging.basicConfig(
@@ -183,19 +187,29 @@ def callback_query(call):
 def scam_newsletter(message):
     logger.debug('scam_newsletter function called')
     print("Received /scam_newsletter command.")
-    
+
+    # Check if the newsletter is cached and still valid
+    cached_newsletter = cache.get('newsletter')
+    if cached_newsletter:
+        print("Sending cached newsletter.")
+        bot.send_message(message.chat.id, cached_newsletter)
+        return
+
     try:
         # Scrape recent scams from https://www.scamalert.sg/stories
         print("Scraping recent scams...")
         scam_stories, first_read_more_link = scrape_scam_stories()
         print("Scam stories scraped.")
-        
+
         # Prompt GPT for counter measures
         counter_measures = generate_counter_measures(scam_stories)
-        
+
         # Generate newsletter message
         newsletter = generate_newsletter(scam_stories, counter_measures, first_read_more_link)
-        
+
+        # Cache the newsletter
+        cache['newsletter'] = newsletter
+
         # Send newsletter message to user
         print("Sending newsletter to user.")
         bot.send_message(message.chat.id, newsletter)
