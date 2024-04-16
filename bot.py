@@ -3,8 +3,11 @@ import json
 import logging
 import json
 import time
+import validators
+import textwrap
 from cachetools import TTLCache
 from scamscraper import scrape_scam_stories
+from urlscan import submit_url_to_urlscan
 from langchain_openai import ChatOpenAI
 # from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import (
@@ -18,7 +21,12 @@ from langchain.agents.openai_tools.base import create_openai_tools_agent
 from langchain.agents.agent import AgentExecutor
 import agenttools
 
+
+
 cache = TTLCache(maxsize=1, ttl=6 * 60 * 60)  # maxsize=1 because we only need to cache one newsletter
+
+# Dictionary to keep track of the state of each user
+url_scan_pending = {}
 
 # Enable logging
 logging.basicConfig(
@@ -159,6 +167,58 @@ def generate_newsletter(scam_stories, counter_measures, first_read_more_link):
     print("Newsletter generated.")
     return newsletter
 
+
+def generate_scan_results_message(scan_data):
+    print("Generating scan results message...")
+
+    # Assuming 'scan_data' is a dictionary containing the formatted results from the 'format_scan_results' function
+    submitted_url = scan_data.get('Submitted URL', 'N/A')
+    results_url = scan_data.get('Results URL', 'N/A')
+    malicious_score = scan_data.get('Malicious Score', 0)
+    page_title = scan_data.get('Page Title', 'N/A')
+    primary_url = scan_data.get('Primary URL', 'N/A')
+    ip_addresses = len(scan_data.get('IP Addresses', []))
+    countries = scan_data.get('Countries', [])
+
+    
+
+    # Determine the malicious status based on the score
+    malicious_status = ""
+
+    if malicious_score > 50:
+        malicious_status = "🔴 Highly Malicious - This website is very likely to be harmful."
+    elif malicious_score > 0:
+        malicious_status = "🟠 Suspicious - This website could be risky."
+    elif malicious_score == 0:
+        malicious_status = "🟡 Uncertain - This website's safety is unclear."
+    elif malicious_score > -50:
+        malicious_status = "🟢 Likely Safe - This website is probably harmless."
+    else:
+        malicious_status = "🟢 Very Safe - This website is almost certainly legitimate."
+
+    country_label = "country" if country_count == 1 else "countries"
+
+    # Build the message
+    scan_results_message = textwrap.dedent(f"""
+    🚨 URL Scan Results 🚨
+
+    🔗 Submitted URL: {submitted_url}
+    🌐 Website Title: {page_title}
+    🏠 Primary/Base URL Detected: {primary_url}
+    📉 Malicious Score: {malicious_score}% 
+    {malicious_status}
+
+    🖥️ IP Addresses: {ip_addresses} IPs were contacted in {len(countries)} {country_label}
+    🌍 Countries Contacted: {', '.join(countries) if countries else 'None'}
+
+    Further Details: Read the full report at the following urlscan.io website for more in-depth analysis.
+    {results_url}
+    """)
+    logger.info("Formatted Scan Results Message:")
+    logger.info(scan_results_message)
+    return scan_results_message
+
+
 ########## Command Handlers ############
 @bot.message_handler(commands=['start'])
 def start_new(message):
@@ -170,6 +230,8 @@ def start_new(message):
     keyboard = telebot.types.InlineKeyboardMarkup()
     scam_newsletter_button = telebot.types.InlineKeyboardButton(text="Get Scam Newsletter", callback_data="/scam_newsletter")
     keyboard.add(scam_newsletter_button)
+    url_scan_button = telebot.types.InlineKeyboardButton(text="Scan a URL", callback_data="scan_url")
+    keyboard.add(url_scan_button)
     bot.send_message(message.chat.id, welcome_message, reply_markup=keyboard)
 
 
@@ -179,10 +241,57 @@ def display_help(message):
 
     bot.send_message(message.chat.id, help_message)
 
+
+@bot.message_handler(content_types=['text'])
+def send_text(message):
+    user_id = message.from_user.id
+
+    # Check if the message is a command (specifically looking for '/cancel')
+    if message.text.strip() == '/cancel':
+        cancel(message)
+        return
+
+    if user_id in url_scan_pending and url_scan_pending[user_id]:
+        url = message.text.strip()
+        logger.debug("Received message: " + url)
+        logger.debug("Checking URL validity...")
+
+        if is_valid_url(url):
+            bot.send_message(message.chat.id, "Scan in progress. I'll send you the results shortly.")
+            scan_result = submit_url_to_urlscan(url, logger)
+
+            results = generate_scan_results_message(scan_result)
+            bot.send_message(message.chat.id, results)
+
+            # handle_scan_results(scan_result, lambda msg: bot.send_message(message.chat.id, msg), logger)
+            url_scan_pending[user_id] = False  # Reset the state ONLY after a valid URL is processed
+        else:
+            bot.send_message(message.chat.id, "That doesn't seem to be a valid URL. Please send a valid URL, or use /cancel to stop the URL submission process.")
+
+    else:
+        answer = generate_answer(message.chat.id, message.text)
+        bot.send_message(message.chat.id, answer)
+
+
+# cancel function in case users want to stop submitting links
+@bot.message_handler(commands=['cancel'])
+def cancel(message):
+    user_id = message.from_user.id
+    if user_id in url_scan_pending and url_scan_pending[user_id]:
+        bot.send_message(message.chat.id, "URL submission canceled.")
+        url_scan_pending[user_id] = False  # Reset the state
+    else:
+        bot.send_message(message.chat.id, "No active URL submission found.")
+
+
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     if call.data == "/scam_newsletter":
         scam_newsletter(call.message)
+    elif call.data == "scan_url":
+        # Indicate that the next message should be treated as a URL to scan
+        url_scan_pending[call.from_user.id] = True
+        bot.send_message(call.message.chat.id, "Please send me the URL you want to scan.")
 
 def scam_newsletter(message):
     logger.debug('scam_newsletter function called')
@@ -217,6 +326,20 @@ def scam_newsletter(message):
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         bot.send_message(message.chat.id, "Oops! Something went wrong. Please try again later.")
+
+def is_valid_url(url):
+    if validators.url(url):
+        logger.info("URL is valid: " + url)
+        return True
+    # Check and fix URLs without schema
+    if not url.startswith(('http://', 'https://')):
+        url = 'http://' + url
+        if validators.url(url):
+            logger.info("URL is valid after adding HTTP: " + url)
+            return True
+    logger.warning("URL is not valid: " + url)
+    return False
+
 
 ########################################
     
