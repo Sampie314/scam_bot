@@ -8,6 +8,7 @@ import textwrap
 from cachetools import TTLCache
 from scamscraper import scrape_scam_stories
 from urlscan import submit_url_to_urlscan
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from langchain_openai import ChatOpenAI
 # from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import (
@@ -180,8 +181,6 @@ def generate_scan_results_message(scan_data):
     ip_addresses = len(scan_data.get('IP Addresses', []))
     countries = scan_data.get('Countries', [])
 
-    
-
     # Determine the malicious status based on the score
     malicious_status = ""
 
@@ -196,7 +195,7 @@ def generate_scan_results_message(scan_data):
     else:
         malicious_status = "🟢 Very Safe - This website is almost certainly legitimate."
 
-    country_label = "country" if country_count == 1 else "countries"
+    country_label = "country" if len(countries) == 1 else "countries"
 
     # Build the message
     scan_results_message = textwrap.dedent(f"""
@@ -219,6 +218,18 @@ def generate_scan_results_message(scan_data):
     return scan_results_message
 
 
+def follow_up_options(chat_id):
+    # follow-up message
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    markup.add(
+        InlineKeyboardButton("Generate Scam Newsletter", callback_data='/scam_newsletter'),
+        InlineKeyboardButton("Scan a URL", callback_data='scan_url'),
+        InlineKeyboardButton("Stop the Bot", callback_data='stop_bot'),
+        InlineKeyboardButton("Help", callback_data='help')
+    )
+    bot.send_message(chat_id, "What would you like to do next?", reply_markup=markup)
+
 ########## Command Handlers ############
 @bot.message_handler(commands=['start'])
 def start_new(message):
@@ -239,7 +250,7 @@ def start_new(message):
 def display_help(message):
     logger.debug('display_help function called')
 
-    bot.send_message(message.chat.id, help_message)
+    bot.send_message(message.chat.id, help_message, parse_mode='HTML')
 
 
 @bot.message_handler(content_types=['text'])
@@ -260,17 +271,25 @@ def send_text(message):
             bot.send_message(message.chat.id, "Scan in progress. I'll send you the results shortly.")
             scan_result = submit_url_to_urlscan(url, logger)
 
-            results = generate_scan_results_message(scan_result)
-            bot.send_message(message.chat.id, results)
+            # Check if the result is an error string or a dictionary
+            if isinstance(scan_result, str):
+                bot.send_message(message.chat.id, scan_result)  # Send the error message directly
+            else:
+                results = generate_scan_results_message(scan_result)
+                bot.send_message(message.chat.id, results)
 
-            # handle_scan_results(scan_result, lambda msg: bot.send_message(message.chat.id, msg), logger)
+            follow_up_options(message.chat.id) # send follow-up message
             url_scan_pending[user_id] = False  # Reset the state ONLY after a valid URL is processed
+
         else:
             bot.send_message(message.chat.id, "That doesn't seem to be a valid URL. Please send a valid URL, or use /cancel to stop the URL submission process.")
 
     else:
         answer = generate_answer(message.chat.id, message.text)
         bot.send_message(message.chat.id, answer)
+
+        # send follow-up message
+        follow_up_options(message.chat.id)
 
 
 # cancel function in case users want to stop submitting links
@@ -292,6 +311,14 @@ def callback_query(call):
         # Indicate that the next message should be treated as a URL to scan
         url_scan_pending[call.from_user.id] = True
         bot.send_message(call.message.chat.id, "Please send me the URL you want to scan.")
+    elif call.data == 'stop_bot':
+        # Optionally stop the bot or just say goodbye
+        bot.send_message(call.message.chat.id, "Goodbye!")
+    elif call.data == 'help':
+        # Send help information
+        display_help(call.message)
+
+    bot.answer_callback_query(call.id)
 
 def scam_newsletter(message):
     logger.debug('scam_newsletter function called')
@@ -323,6 +350,10 @@ def scam_newsletter(message):
         print("Sending newsletter to user.")
         bot.send_message(message.chat.id, newsletter)
         print("Newsletter sent.")
+
+        # send follow-up message
+        follow_up_options(message.chat.id)
+
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         bot.send_message(message.chat.id, "Oops! Something went wrong. Please try again later.")
