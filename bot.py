@@ -21,13 +21,16 @@ from langchain.memory import ConversationBufferWindowMemory
 from langchain.agents.openai_tools.base import create_openai_tools_agent
 from langchain.agents.agent import AgentExecutor
 import agenttools
-
+import checkscam
 
 
 cache = TTLCache(maxsize=1, ttl=6 * 60 * 60)  # maxsize=1 because we only need to cache one newsletter
 
 # Dictionary to keep track of the state of each user
 url_scan_pending = {}
+scam_message_pending = set()
+import collections
+seen_scams = collections.defaultdict(int)
 
 # Enable logging
 logging.basicConfig(
@@ -104,6 +107,7 @@ def generate_answer(chat_id, text):
 
     return result
 
+
 def generate_counter_measures(scam_stories):
     print("Generating counter measures...")
     counter_measures_prompt = f"""
@@ -116,6 +120,7 @@ def generate_counter_measures(scam_stories):
     counter_measures = chat.predict(counter_measures_prompt)
     print("Counter measures generated.")
     return counter_measures
+
 
 def generate_newsletter(scam_stories, counter_measures, first_read_more_link):
     print("Generating newsletter...")
@@ -218,17 +223,52 @@ def generate_scan_results_message(scan_data):
     return scan_results_message
 
 
+def generate_scam_message_check(message: str, seen: int, chat_id):
+    logger.debug('generate_scam_message_check function called')
+    # Create new chat history if new conversation
+    if chat_id not in conversation_histories:
+        conversation_histories[chat_id] = ConversationBufferWindowMemory(memory_key='chat_history', k=convo_buffer_window, return_messages=True)
+
+    # Instantiate agent with selected memory
+    agent = AgentExecutor.from_agent_and_tools(
+        agent = ag,
+        tools = tools,
+        llm = chat,
+        verbose = True,
+        max_iterations = 3,
+        memory = conversation_histories[chat_id]
+    )
+        
+    prompt = checkscam.generate_check_scam_prompt(message, seen)
+
+    try:
+        response = agent.invoke({"input": prompt})
+        
+        result = ''
+        result += response["output"]
+
+        logger.info(f'Conversation history: {conversation_histories[chat_id]}')
+        logger.debug(f'Reply: {result}')
+
+    except Exception as e:
+        return f"Oops!! Some problems with openAI. Reason: {e}"
+    
+    return result
+
+
 def follow_up_options(chat_id):
     # follow-up message
-    markup = InlineKeyboardMarkup()
+    markup = telebot.types.InlineKeyboardMarkup()
     markup.row_width = 2
     markup.add(
-        InlineKeyboardButton("Generate Scam Newsletter", callback_data='/scam_newsletter'),
-        InlineKeyboardButton("Scan a URL", callback_data='scan_url'),
-        InlineKeyboardButton("Stop the Bot", callback_data='stop_bot'),
-        InlineKeyboardButton("Help", callback_data='help')
+        telebot.types.InlineKeyboardButton("Generate Scam Newsletter", callback_data='/scam_newsletter'),
+        telebot.types.InlineKeyboardButton("Scan a URL", callback_data='scan_url'),
+        telebot.types.InlineKeyboardButton("Stop the Bot", callback_data='stop_bot'),
+        telebot.types.InlineKeyboardButton("Check Scam Message", callback_data='check_scam_message'),
+        telebot.types.InlineKeyboardButton("Help", callback_data='help')
     )
     bot.send_message(chat_id, "What would you like to do next?", reply_markup=markup)
+
 
 ########## Command Handlers ############
 @bot.message_handler(commands=['start'])
@@ -238,12 +278,16 @@ def start_new(message):
     # Refresh conversation history
     conversation_histories[message.chat.id] = ConversationBufferWindowMemory(memory_key='chat_history', k=convo_buffer_window, return_messages=True)
 
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    scam_newsletter_button = telebot.types.InlineKeyboardButton(text="Get Scam Newsletter", callback_data="/scam_newsletter")
-    keyboard.add(scam_newsletter_button)
-    url_scan_button = telebot.types.InlineKeyboardButton(text="Scan a URL", callback_data="scan_url")
-    keyboard.add(url_scan_button)
-    bot.send_message(message.chat.id, welcome_message, reply_markup=keyboard)
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.row_width = 2
+    markup.add(
+        telebot.types.InlineKeyboardButton("Generate Scam Newsletter", callback_data='/scam_newsletter'),
+        telebot.types.InlineKeyboardButton("Scan a URL", callback_data='scan_url'),
+        telebot.types.InlineKeyboardButton("Stop the Bot", callback_data='stop_bot'),
+        telebot.types.InlineKeyboardButton("Check Scam Message", callback_data='check_scam_message'),
+        telebot.types.InlineKeyboardButton("Help", callback_data='help')
+    )
+    bot.send_message(message.chat.id, welcome_message, reply_markup=markup)
 
 
 @bot.message_handler(commands=['help'])
@@ -251,6 +295,7 @@ def display_help(message):
     logger.debug('display_help function called')
 
     bot.send_message(message.chat.id, help_message, parse_mode='HTML')
+    follow_up_options(message.chat.id) # send follow-up message
 
 
 @bot.message_handler(content_types=['text'])
@@ -283,6 +328,17 @@ def send_text(message):
 
         else:
             bot.send_message(message.chat.id, "That doesn't seem to be a valid URL. Please send a valid URL, or use /cancel to stop the URL submission process.")
+    
+    elif user_id in scam_message_pending:
+        scam_message = message.text.strip()
+        logger.debug(f"Received message: {scam_message}" )
+
+        seen_times = seen_scams[scam_message]
+        seen_scams[scam_message] += 1
+
+        scam_message_pending.discard(user_id)
+        reply = generate_scam_message_check(scam_message, seen_times, message.chat.id)
+        bot.send_message(message.chat.id, f'{reply}')  
 
     else:
         answer = generate_answer(message.chat.id, message.text)
@@ -312,13 +368,20 @@ def callback_query(call):
         url_scan_pending[call.from_user.id] = True
         bot.send_message(call.message.chat.id, "Please send me the URL you want to scan.")
     elif call.data == 'stop_bot':
+        # Refresh conversation history
+        conversation_histories[call.message.chat.id] = ConversationBufferWindowMemory(memory_key='chat_history', k=convo_buffer_window, return_messages=True)
         # Optionally stop the bot or just say goodbye
         bot.send_message(call.message.chat.id, "Goodbye!")
     elif call.data == 'help':
         # Send help information
         display_help(call.message)
+    elif call.data == 'check_scam_message':
+        # Indicate that the next message should be treated as a scam message to check
+        scam_message_pending.add(call.from_user.id)
+        bot.send_message(call.message.chat.id, "Forward or copy paste a message that you would like us to check here!")
 
     bot.answer_callback_query(call.id)
+
 
 def scam_newsletter(message):
     logger.debug('scam_newsletter function called')
@@ -357,6 +420,7 @@ def scam_newsletter(message):
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         bot.send_message(message.chat.id, "Oops! Something went wrong. Please try again later.")
+
 
 def is_valid_url(url):
     if validators.url(url):

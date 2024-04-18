@@ -1,4 +1,4 @@
-from langchain.document_loaders import WebBaseLoader
+from langchain_community.document_loaders import WebBaseLoader
 import requests
 from bs4 import BeautifulSoup
 import re  
