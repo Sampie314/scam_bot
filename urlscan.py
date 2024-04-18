@@ -64,7 +64,7 @@ def submit_url_to_urlscan(url, logger):
             # Scan is not yet ready, wait a bit before retrying
             time.sleep(10)
         else:
-            return "Error submitting the URL. Please try again later."
+            return "Error submitting the URL."
         
 
 def format_scan_results(data, url, results_url, logger):

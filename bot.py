@@ -8,6 +8,7 @@ import textwrap
 from cachetools import TTLCache
 from scamscraper import scrape_scam_stories
 from urlscan import submit_url_to_urlscan
+from googlescan import check_url_with_google_safe_browsing
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from langchain_openai import ChatOpenAI
 # from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -218,6 +219,166 @@ def generate_scan_results_message(scan_data):
     return scan_results_message
 
 
+def generate_safe_browsing_message(response_data):
+    print("Generating Google Safe Browsing results message...")
+
+    if not response_data.get('matches'):
+        return "🟢 No threats detected. The site appears to be safe."
+
+    threat_details = {}
+    platforms_at_risk = set()
+    for match in response_data['matches']:
+        threat_type = match.get('threatType')
+        platform_type = match.get('platformType')
+        threat_url = match['threat']['url']
+
+        # Filter out generic platform types for clearer messaging
+        if platform_type not in ["ALL_PLATFORMS", "ANY_PLATFORM"]:
+            threat_details.setdefault(threat_type, set()).add(platform_type)
+            platforms_at_risk.add(platform_type)
+
+    # Create lists for the threats and platforms
+    threat_list = ', '.join([threat.replace('_', ' ').title() for threat in threat_details.keys()])
+    platform_list = ', '.join(sorted([platform.replace('_', ' ').title() for platform in platforms_at_risk]))
+
+    # Build the introductory threat message
+    threat_intro = f"<b>🚨 URL Scan Results 🚨</b>\n\n🔗 Submitted URL: {threat_url}\n⚠️ Potential Security Threats Detected\n"
+    threat_intro += f"        • Threats Identified: {threat_list}\n"
+    threat_intro += f"        • Platforms at Risk: {platform_list}\n\n\n"
+    threat_intro += f"<b>💡 Threat Advisory!! 💡</b>"
+
+    # Add specific advisory messages based on threat type
+    messages = []
+    
+    for threat in threat_details:
+        if threat == "SOCIAL_ENGINEERING":
+            messages.append(textwrap.dedent(f"""
+            <i>Social Engineering (Phishing and Deceptive Sites) 🎣</i>
+            Attackers on [{threat_url}] may trick you into doing something dangerous like installing software or revealing your personal information (e.g., passwords, phone numbers, or credit cards).
+            You can learn more about social engineering at (https://www.antiphishing.org) or Google’s Safe Browsing Advisory (https://safebrowsing.google.com).
+            """))
+        elif threat == "MALWARE":
+            messages.append(textwrap.dedent(f"""
+            <i>Malware: Visiting This Website May Harm Your Computer 🦠</i>
+            This page at [{threat_url}] appears to contain malicious code that could be downloaded to your computer without your consent.
+            You can learn more about how to protect your computer at Google Search Central (https://developers.google.com/search/docs/advanced/guidelines/how-to).
+            """))
+        elif threat == "UNWANTED_SOFTWARE":
+            messages.append(textwrap.dedent(f"""
+            <i>Unwanted Software: The Site Ahead May Contain Harmful Programs 👾</i>
+            Attackers might attempt to trick you into installing programs that harm your browsing experience (e.g., by changing your homepage or showing extra ads on sites you visit).
+            You can learn more about unwanted software at Google’s Unwanted Software Policy (https://www.google.com/about/unwanted-software-policy.html).
+            """))
+
+    # Combine all messages into one, ensuring there are no duplicate messages
+    unique_messages = list(set(messages))  # Remove duplicates if any
+    consolidated_message = "\n\n".join(unique_messages)
+    final_message = threat_intro + consolidated_message + "\n\n<b><i>Advisory provided by Google.</i></b>\n<i>Please exercise caution when visiting this site.</i>"
+    return final_message
+
+
+def generate_combined_scan_message(urlscan_data, google_data, threat_url):
+    print("Generating combined scan results message...")
+
+    # Extract URLScan results: Check if the result is an error string or a dictionary
+    if isinstance(urlscan_data, str):
+        urlscan_verdict = urlscan_data # Send the error message directly
+    else:
+        urlscan_verdict = "🟡 No Verdict" 
+        if urlscan_data.get('Malicious Score', 0) > 50:
+            urlscan_verdict = "🔴 Highly Malicious"
+        elif urlscan_data.get('Malicious Score', 0) > 0:
+            urlscan_verdict = "🟠 Suspicious"
+        elif urlscan_data.get('Malicious Score', 0) < 0:
+            urlscan_verdict = "🟢 Likely Safe"
+
+    # Extract Google Safe Browsing results
+    google_threats = {}
+    platforms = set()
+    for match in google_data['matches']:
+        threat_type = match.get('threatType')
+        platform_type = match.get('platformType')
+        threat_url = match['threat']['url']
+
+        # Filter out generic platform types for clearer messaging
+        if platform_type not in ["ALL_PLATFORMS", "ANY_PLATFORM"]:
+            google_threats.setdefault(threat_type, set()).add(platform_type)
+            platforms.add(platform_type)
+
+    # Create lists for the threats and platforms
+    threat_list = ', '.join([threat.replace('_', ' ').title() for threat in google_threats.keys()])
+    platform_list = ', '.join(sorted([platform.replace('_', ' ').title() for platform in platforms]))
+
+    google_verdict = "🟢 No Threats Detected" if not google_threats else "🔴 Potentially Malicious"
+
+    # Start the consolidated message
+    consolidated_message = f"<b>🚨 URL Scan Results 🚨</b>\n🔗 Submitted URL: {threat_url}\n"
+    consolidated_message += f"🔍 Google Safe Browsing Verdict: {google_verdict}\n"
+    consolidated_message += f"🔍 urlscanio Verdict: {urlscan_verdict}\n\n\n"
+
+    # Include Google API threat details if any
+    if google_threats:
+        consolidated_message += "<b><u>Identified Threats</u></b>\n"
+        consolidated_message += f"⚠️ Threat Types Detected: {threat_list}\n"
+        consolidated_message += f"💻 Platforms at Risk: {platform_list}\n\n"
+
+    # Include URLScan details for more clarity
+    if not isinstance(urlscan_data, str):
+        page_title = urlscan_data.get('Page Title', 'N/A')
+        primary_url = urlscan_data.get('Primary URL', 'N/A')
+        ip_addresses = len(urlscan_data.get('IP Addresses', []))
+        countries = urlscan_data.get('Countries', [])
+        country_label = "country" if len(countries) == 1 else "countries"
+
+        consolidated_message += "<b><u>Additional urlscanio Details:</u></b>\n"
+        consolidated_message += f"🌐 Website Title: {page_title}\n"
+        consolidated_message += f"🏠 Primary/Base URL Detected: {primary_url}\n"
+        consolidated_message += f"🖥️ IP Addresses: {ip_addresses} IPs were contacted in {len(countries)} {country_label}\n"
+        consolidated_message += f"🌍 Countries Contacted: {', '.join(countries) if countries else 'None'}\n\n"
+
+    # Include Google Safe Browsing Threat Advisory
+    if google_threats:
+        consolidated_message += f"===============\n<b>💡 Threat Advisory from Google 💡</b>"
+
+        # Add specific advisory messages based on threat type
+        messages = []
+        
+        for threat in google_threats:
+            if threat == "SOCIAL_ENGINEERING":
+                messages.append(textwrap.dedent(f"""
+                <i>Social Engineering (Phishing and Deceptive Sites) 🎣</i>
+                Attackers on [{threat_url}] may trick you into doing something dangerous like installing software or revealing your personal information (e.g., passwords, phone numbers, or credit cards).
+                You can learn more about social engineering at (https://www.antiphishing.org) or Google’s Safe Browsing Advisory (https://safebrowsing.google.com).
+                """))
+            elif threat == "MALWARE":
+                messages.append(textwrap.dedent(f"""
+                <i>Malware: Visiting This Website May Harm Your Computer 🦠</i>
+                This page at [{threat_url}] appears to contain malicious code that could be downloaded to your computer without your consent.
+                You can learn more about how to protect your computer at Google Search Central (https://developers.google.com/search/docs/advanced/guidelines/how-to).
+                """))
+            elif threat == "UNWANTED_SOFTWARE":
+                messages.append(textwrap.dedent(f"""
+                <i>Unwanted Software: The Site Ahead May Contain Harmful Programs 👾</i>
+                Attackers might attempt to trick you into installing programs that harm your browsing experience (e.g., by changing your homepage or showing extra ads on sites you visit).
+                You can learn more about unwanted software at Google’s Unwanted Software Policy (https://www.google.com/about/unwanted-software-policy.html).
+                """))
+
+        # Combine all messages into one, ensuring there are no duplicate messages
+        unique_messages = list(set(messages))  # Remove duplicates if any
+        advisories = "\n\n".join(unique_messages)
+        consolidated_message += advisories
+        consolidated_message += "\n\n"
+
+    # Concluding summary and links to more details
+    consolidated_message += "<b><i>Please continue to exercise caution when visiting unknown sites.</i>\n\nFor more details:</b>\n"
+    if not isinstance(urlscan_data, str):
+        consolidated_message += f"Read the full urlscanio report for more in-depth analysis:{urlscan_data.get('Results URL')} , and\n"
+    consolidated_message += f"Refer to Google’s Safe Browsing Advisory: https://safebrowsing.google.com\n"
+
+    return consolidated_message
+
+
+
 def follow_up_options(chat_id):
     # follow-up message
     markup = InlineKeyboardMarkup()
@@ -269,14 +430,24 @@ def send_text(message):
 
         if is_valid_url(url):
             bot.send_message(message.chat.id, "Scan in progress. I'll send you the results shortly.")
-            scan_result = submit_url_to_urlscan(url, logger)
-
+            
+            # URLSCAN API CODE
+            urlscan_data = submit_url_to_urlscan(url, logger)  
             # Check if the result is an error string or a dictionary
-            if isinstance(scan_result, str):
-                bot.send_message(message.chat.id, scan_result)  # Send the error message directly
-            else:
-                results = generate_scan_results_message(scan_result)
-                bot.send_message(message.chat.id, results)
+            # if isinstance(urlscan_data, str):
+            #     bot.send_message(message.chat.id, urlscan_data)  # Send the error message directly
+            # else:
+            #     results = generate_scan_results_message(urlscan_data)
+            #     bot.send_message(message.chat.id, results)
+
+            # GOOGLE API CODE
+            google_data = check_url_with_google_safe_browsing(url, logger)
+            # response = generate_safe_browsing_message(google_data)
+            # bot.send_message(message.chat.id, response, parse_mode='HTML')
+
+            # generate combined message
+            combined_report = generate_combined_scan_message(urlscan_data, google_data, url)
+            bot.send_message(message.chat.id, combined_report, parse_mode='HTML')
 
             follow_up_options(message.chat.id) # send follow-up message
             url_scan_pending[user_id] = False  # Reset the state ONLY after a valid URL is processed
