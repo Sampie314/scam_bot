@@ -2,6 +2,8 @@
 
 Welcome to ScamBot, a Telegram bot designed to raise scam awareness and help prevent fraudulent activities in Singapore. ScamBot is equipped to offer users guidance on spotting and handling scams, alongside tools for checking the safety of URLs through integration with both URLScan.io and Google Safe Browsing API.
 
+[![ScamBot Demo](https://img.youtube.com/vi/LxGVSYtDLp4/0.jpg)](https://www.youtube.com/watch?v=LxGVSYtDLp4)
+
 ## How It Works
 
 ScamBot interacts with users via Telegram commands and inline buttons, processing and responding based on the user's selections:
