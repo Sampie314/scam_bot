@@ -389,6 +389,9 @@ def generate_scam_message_check(message: str, seen: int, chat_id):
         conversation_histories[chat_id] = ConversationBufferWindowMemory(memory_key='chat_history', k=convo_buffer_window, return_messages=True)
 
     # Instantiate agent with selected memory
+    tools = [agenttools.multiplication_tool]
+    ag = create_openai_tools_agent(chat, tools, prompt)
+
     agent = AgentExecutor.from_agent_and_tools(
         agent = ag,
         tools = tools,
@@ -488,7 +491,8 @@ def send_text(message):
             # response = generate_safe_browsing_message(google_data)
             # bot.send_message(message.chat.id, response, parse_mode='HTML')
 
-            # generate combined message
+            # generate combined messageretrieve_message_seen_count
+
             combined_report = generate_combined_scan_message(urlscan_data, google_data, url)
             bot.send_message(message.chat.id, combined_report, parse_mode='HTML')
 
