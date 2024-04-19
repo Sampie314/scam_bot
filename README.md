@@ -51,7 +51,8 @@ To get ScamBot up and running, you will need Docker installed on your system. Fo
     - Run the Docker container:
 
     ```bash
-    docker run -d scambot
+    docker run --name redis-host --network app-network -p 6379:6379 -d redis
+    docker run --name scambot --network app-network -d scambot
     ```
 
 ### File Structure
