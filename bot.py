@@ -30,8 +30,7 @@ cache = TTLCache(maxsize=1, ttl=6 * 60 * 60)  # maxsize=1 because we only need t
 # Dictionary to keep track of the state of each user
 url_scan_pending = {}
 scam_message_pending = set()
-import collections
-seen_scams = collections.defaultdict(int)
+
 
 # Enable logging
 logging.basicConfig(
@@ -69,7 +68,7 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
     MessagesPlaceholder("agent_scratchpad"),
 ])
-tools = [agenttools.multiplication_tool]
+tools = [agenttools.multiplication_tool, agenttools.check_scam_message_tool]
 ag = create_openai_tools_agent(chat, tools, prompt)
 
 
@@ -503,8 +502,8 @@ def send_text(message):
         scam_message = message.text.strip()
         logger.debug(f"Received message: {scam_message}" )
 
-        seen_times = seen_scams[scam_message]
-        seen_scams[scam_message] += 1
+        seen_times = checkscam.retrieve_message_seen_count(scam_message)
+        logger.info(f'Message seen count: {seen_times}')
 
         scam_message_pending.discard(user_id)
         reply = generate_scam_message_check(scam_message, seen_times, message.chat.id)

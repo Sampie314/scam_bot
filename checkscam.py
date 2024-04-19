@@ -1,13 +1,20 @@
 import logging
+import redis
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG
 )
 logger = logging.getLogger(__name__)
 
-def check_scam_message(message, seen_num):
-    logger.debug('check_scam_message function called')
-    pass
+seen_scams = redis.Redis()
+
+def retrieve_message_seen_count(message):
+    logger.debug('retrieve_message_seen_count function called')
+
+    count = seen_scams.get(message)
+    count = 0 if count is None else count.decode('utf-8')
+    seen_scams.incr(message) # increment seen count
+    return count
 
 def generate_check_scam_prompt(scam_message: str, seen_num: int) -> str:
     logger.debug('generate_check_scam_prompt function called')
