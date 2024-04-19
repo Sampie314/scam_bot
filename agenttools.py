@@ -31,7 +31,7 @@ def multiplication_tool(a: float, b: float) -> float:
 
 @tool("check_if_message_is_scam", return_direct=False, args_schema=scamMessageModel)
 def check_scam_message_tool(message: str) -> int:
-     "Use this tool to check how many times users have submitted this message to check if it is a scam"
+     "Use this tool to check how many times users have submitted this message to check if it is a scam. ONLY use it if you are explicitly asked to check if a message is a scam."
      logging.debug('check_scam_message_tool called')
      seen_times = checkscam.retrieve_message_seen_count(message)
 

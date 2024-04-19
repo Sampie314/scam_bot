@@ -517,7 +517,7 @@ def send_text(message):
 
     else:
         answer = generate_answer(message.chat.id, message.text)
-        bot.send_message(message.chat.id, answer)
+        bot.send_message(message.chat.id, answer, parse_mode='HTML')
 
         # send follow-up message
         follow_up_options(message.chat.id)
@@ -573,7 +573,8 @@ Stay vigilant and take these steps as soon as possible. You're not alone in this
         conversation_histories[call.message.chat.id].save_context({"input": "I've been scammed!"}, {"output": reply})
 
         bot.send_message(call.message.chat.id, reply, parse_mode='HTML')
-        
+        bot.send_message(call.message.chat.id, 'Tell me more about your scam so I can help you better!')
+
     bot.answer_callback_query(call.id)
 
 
