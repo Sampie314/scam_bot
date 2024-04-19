@@ -401,10 +401,10 @@ def generate_scam_message_check(message: str, seen: int, chat_id):
         memory = conversation_histories[chat_id]
     )
         
-    prompt = checkscam.generate_check_scam_prompt(message, seen)
+    scam_check_prompt = checkscam.generate_check_scam_prompt(message, seen)
 
     try:
-        response = agent.invoke({"input": prompt})
+        response = agent.invoke({"input": scam_check_prompt})
         
         result = ''
         result += response["output"]
