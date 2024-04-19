@@ -427,6 +427,7 @@ def follow_up_options(chat_id):
         telebot.types.InlineKeyboardButton("Scan a URL", callback_data='scan_url'),
         telebot.types.InlineKeyboardButton("Stop the Bot", callback_data='stop_bot'),
         telebot.types.InlineKeyboardButton("Check Scam Message", callback_data='check_scam_message'),
+        telebot.types.InlineKeyboardButton("Ive Been Scammed!", callback_data='ive_been_scammed'),
         telebot.types.InlineKeyboardButton("Help", callback_data='help')
     )
     bot.send_message(chat_id, "What would you like to do next?", reply_markup=markup)
@@ -447,6 +448,7 @@ def start_new(message):
         telebot.types.InlineKeyboardButton("Scan a URL", callback_data='scan_url'),
         telebot.types.InlineKeyboardButton("Stop the Bot", callback_data='stop_bot'),
         telebot.types.InlineKeyboardButton("Check Scam Message", callback_data='check_scam_message'),
+        telebot.types.InlineKeyboardButton("Ive Been Scammed!", callback_data='ive_been_scammed'),
         telebot.types.InlineKeyboardButton("Help", callback_data='help')
     )
     bot.send_message(message.chat.id, welcome_message, reply_markup=markup)
@@ -552,7 +554,26 @@ def callback_query(call):
         # Indicate that the next message should be treated as a scam message to check
         scam_message_pending.add(call.from_user.id)
         bot.send_message(call.message.chat.id, "Forward or copy paste a message that you would like us to check here!")
+    elif call.data == 'ive_been_scammed':
+        # Respond with follow up actions and options
+        reply = """
+🚨 <b>Oh no, I'm really sorry to hear that!</b> Here’s what you can do right away to help secure your situation and get the support you need:
+<b><u>Contact Your Bank Immediately:</u></b> 🏦 Call your bank to stop further losses. Use their 'kill switch' if available to prevent more transactions.
+<b><u>File a Police Report:</u></b> 🚓 You can do this online or call '999' for urgent assistance. More info on filing can be found <a href='https://www.police.gov.sg/Media-Room/News'>here</a>.
+<b><u>Inform Your Contacts:</u></b> If it’s an online scam affecting your accounts, notify your contacts that your account may be compromised.
+<b><u>Change Your Passwords:</u></b> 🔒 Especially if it’s related to online accounts and enable two-factor or multi-factor authentication.
+<b><u>Report on ScamShield:</u></b> 🛡️ Input your experience on the ScamShield app or use the <a href='https://go.gov.sg/scamshield-bot'>ScamShield WhatsApp bot</a> to report scam details.
+<b><u>Seek Support:</u></b> Talking helps! Connect with a Victim Care Officer via your case officer, or call hotlines like the Samaritans of Singapore at 1800 221 4444 for immediate emotional support.
+Stay vigilant and take these steps as soon as possible. You're not alone in this! 💪
+        """.strip()
 
+        # add to convo history
+        if call.message.chat.id not in conversation_histories:
+            conversation_histories[call.message.chat.id] = ConversationBufferWindowMemory(memory_key='chat_history', k=convo_buffer_window, return_messages=True)
+        conversation_histories[call.message.chat.id].save_context({"input": "I've been scammed!"}, {"output": reply})
+
+        bot.send_message(call.message.chat.id, reply, parse_mode='HTML')
+        
     bot.answer_callback_query(call.id)
 
 
