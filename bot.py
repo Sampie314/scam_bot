@@ -557,31 +557,37 @@ def scam_newsletter(message):
     print("Received /scam_newsletter command.")
 
     # Check if the newsletter is cached and still valid
-    cached_newsletter = cache.get('newsletter')
-    if cached_newsletter:
-        print("Sending cached newsletter.")
-        bot.send_message(message.chat.id, cached_newsletter)
-        return
-
     try:
-        # Scrape recent scams from https://www.scamalert.sg/stories
-        print("Scraping recent scams...")
-        scam_stories, first_read_more_link = scrape_scam_stories()
-        print("Scam stories scraped.")
+        cached_newsletter = cache.get('newsletter')
+        if cached_newsletter:
+            logger.debug("Found cached newsletter.")
+            newsletter = cached_newsletter
 
-        # Prompt GPT for counter measures
-        counter_measures = generate_counter_measures(scam_stories)
+        else:
+            # Scrape recent scams from https://www.scamalert.sg/stories
+            print("Scraping recent scams...")
+            scam_stories, first_read_more_link = scrape_scam_stories()
+            print("Scam stories scraped.")
 
-        # Generate newsletter message
-        newsletter = generate_newsletter(scam_stories, counter_measures, first_read_more_link)
+            # Prompt GPT for counter measures
+            counter_measures = generate_counter_measures(scam_stories)
 
-        # Cache the newsletter
-        cache['newsletter'] = newsletter
+            # Generate newsletter message
+            newsletter = generate_newsletter(scam_stories, counter_measures, first_read_more_link)
+
+            # Cache the newsletter
+            cache['newsletter'] = newsletter
 
         # Send newsletter message to user
-        print("Sending newsletter to user.")
+        logger.debug("Sending newsletter to user.")
         bot.send_message(message.chat.id, newsletter)
-        print("Newsletter sent.")
+        logger.debug("Newsletter sent.")
+
+        # Add newsletter to convo history
+        logger.debug('Adding newsletter to convo history')
+        if message.chat.id not in conversation_histories:
+            conversation_histories[message.chat.id] = ConversationBufferWindowMemory(memory_key='chat_history', k=convo_buffer_window, return_messages=True)
+        conversation_histories[message.chat.id].save_context({"input": "Send me a newsletter on the latest scams in Singapore"}, {"output": newsletter})
 
         # send follow-up message
         follow_up_options(message.chat.id)
