@@ -6,7 +6,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-seen_scams = redis.Redis()
+# Assuming Redis is hosted at a hostname called 'redis-host', typically configured in Docker Compose or Docker network
+seen_scams = redis.Redis(host='redis-host', port=6379, db=0)
+
 
 def retrieve_message_seen_count(message):
     logger.debug('retrieve_message_seen_count function called')
